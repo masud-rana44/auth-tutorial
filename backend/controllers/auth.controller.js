@@ -1,5 +1,6 @@
 import { User } from "../models/user.model.js";
 import { generateTokenAndSetCookie } from "../utils/generateTokenAndSetCookie.js";
+import bcrypt from "bcryptjs";
 
 export const signup = async (req, res) => {
   const { email, password, name } = req.body;
@@ -136,4 +137,76 @@ export const logout = (req, res) => {
     success: true,
     message: "Logged out successfully",
   });
+};
+
+export const forgotPassword = async (req, res) => {
+  const { email } = req.body;
+
+  try {
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(400).json({
+        status: false,
+        message: "User not found",
+      });
+    }
+
+    // Generate reset password token and expiration date
+    const resetToken = crypto.randomBytes(30).toString("hex");
+    const resetTokenExpiresAt = Date.now() + 1 * 60 * 60 * 1000; // 1 hour
+
+    user.resetPasswordToken = resetToken;
+    user.resetPasswordExpiresAt = resetTokenExpiresAt;
+
+    await user.save();
+
+    // Send reset password email with the token
+
+    res.status(200).json({
+      success: true,
+      message: "Password reset link sent to your email",
+    });
+  } catch (error) {
+    console.error("Error in forgot password", error);
+    return res.status(400).json({ status: false, message: error.message });
+  }
+};
+
+export const resetPassword = async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { password } = req.body;
+
+    const user = await User.findOne({
+      resetPasswordToken: token,
+      resetPasswordExpiresAt: { $gt: Date.now() },
+    });
+
+    if (!user) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid or expired reset token" });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    user.password = hashedPassword;
+    user.resetToken = undefined;
+    user.resetPasswordExpiresAt = undefined;
+    await user.save();
+
+    // Send reset success email
+
+    res.status(200).json({
+      success: true,
+      message: "Password reset successfully",
+    });
+  } catch (error) {
+    console.log("Error in reset password", error);
+    res.status(400).json({
+      success: false,
+      message: error.message,
+    });
+  }
 };
